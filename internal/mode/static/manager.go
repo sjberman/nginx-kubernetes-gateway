@@ -48,6 +48,7 @@ import (
 	ngftypes "github.com/nginxinc/nginx-gateway-fabric/internal/framework/types"
 	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/config"
 	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/metrics/collectors"
+	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/agent"
 	ngxcfg "github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/config"
 	ngxvalidation "github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/config/validation"
 	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/file"
@@ -207,6 +208,13 @@ func StartManager(cfg config.Config) error {
 
 	groupStatusUpdater := status.NewLeaderAwareGroupUpdater(statusUpdater)
 
+	agentConfigHandler := agent.NewHandler()
+	grpcServer := &agent.GRPCServer{Port: 8443, Handler: agentConfigHandler}
+	if err = mgr.Add(&runnables.LeaderOrNonLeader{Runnable: grpcServer}); err != nil {
+		return fmt.Errorf("cannot register grpc server: %w", err)
+	}
+
+	// TODO(sberman): event handler loop should wait on a channel until the grpc server has started
 	eventHandler := newEventHandlerImpl(eventHandlerConfig{
 		k8sClient:       mgr.GetClient(),
 		processor:       processor,
@@ -233,6 +241,7 @@ func StartManager(cfg config.Config) error {
 		gatewayCtlrName:               cfg.GatewayCtlrName,
 		updateGatewayClassStatus:      cfg.UpdateGatewayClassStatus,
 		policyConfigGenerator:         policyManager,
+		agentConfigHandler:            agentConfigHandler,
 	})
 
 	objects, objectLists := prepareFirstEventBatchPreparerArgs(

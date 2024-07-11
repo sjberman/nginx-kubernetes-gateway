@@ -2,7 +2,9 @@ package config
 
 import (
 	"path/filepath"
+	gotemplate "text/template"
 
+	"github.com/nginxinc/nginx-gateway-fabric/internal/framework/helpers"
 	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/file"
 	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/state/dataplane"
 )
@@ -171,14 +173,25 @@ func generateConfigVersion(configVersion int) file.File {
 	}
 }
 
+const loadModuleTemplateText = `
+{{- range $module := . }}
+load_module {{ $module }};
+{{- end }}
+`
+
+var loadModuleTemplate = gotemplate.Must(gotemplate.New("load module").Parse(loadModuleTemplateText))
+
 func generateLoadModulesConf(conf dataplane.Configuration) file.File {
-	var c []byte
+	loadModules := []string{
+		"/usr/lib/nginx/modules/ngx_http_js_module.so",
+	}
+
 	if conf.Telemetry.Endpoint != "" {
-		c = []byte("load_module modules/ngx_otel_module.so;")
+		loadModules = append(loadModules, "modules/ngx_otel_module.so")
 	}
 
 	return file.File{
-		Content: c,
+		Content: helpers.MustExecuteTemplate(loadModuleTemplate, loadModules),
 		Path:    loadModulesFile,
 		Type:    file.TypeRegular,
 	}

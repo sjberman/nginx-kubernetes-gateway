@@ -95,6 +95,8 @@ spec:
         - name: metrics
           containerPort: {{ .Values.metrics.port }}
         {{- end }}
+        - containerPort: 8443
+          name: agent-grpc
         {{- if .Values.nginxGateway.readinessProbe.enable }}
         - name: health
           containerPort: {{ .Values.nginxGateway.readinessProbe.port }}

@@ -21,6 +21,7 @@ import (
 	frameworkStatus "github.com/nginxinc/nginx-gateway-fabric/internal/framework/status"
 
 	ngfConfig "github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/config"
+	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/agent"
 	ngxConfig "github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/config"
 	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/file"
 	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/runtime"
@@ -85,6 +86,8 @@ type eventHandlerConfig struct {
 	gatewayCtlrName string
 	// updateGatewayClassStatus enables updating the status of the GatewayClass resource.
 	updateGatewayClassStatus bool
+
+	agentConfigHandler *agent.Handler
 }
 
 const (
@@ -318,6 +321,8 @@ func (h *eventHandlerImpl) updateNginxConf(ctx context.Context, conf dataplane.C
 		return fmt.Errorf("failed to reload NGINX: %w", err)
 	}
 
+	h.cfg.agentConfigHandler.Write(files)
+
 	return nil
 }
 
@@ -335,6 +340,8 @@ func (h *eventHandlerImpl) updateUpstreamServers(
 	if err := h.cfg.nginxFileMgr.ReplaceFiles(files); err != nil {
 		return fmt.Errorf("failed to replace NGINX configuration files: %w", err)
 	}
+
+	h.cfg.agentConfigHandler.Write(files)
 
 	reload := func() error {
 		if err := h.cfg.nginxRuntimeMgr.Reload(ctx, conf.Version); err != nil {

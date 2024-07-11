@@ -159,6 +159,10 @@ service:
       targetPort: 443
       protocol: TCP
       name: https
+    - port: 8443
+      targetPort: 8443
+      protocol: TCP
+      name: agent-grpc
 
 metrics:
   # -- Enable exposing metrics in the Prometheus format.

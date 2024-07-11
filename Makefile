@@ -79,6 +79,9 @@ build-prod-nginx-image: build-nginx-image ## Build the custom nginx image for pr
 build-nginx-image: check-for-docker ## Build the custom nginx image
 	docker build --platform linux/$(GOARCH) $(strip $(NGINX_DOCKER_BUILD_OPTIONS)) -f $(SELF_DIR)build/Dockerfile.nginx -t $(strip $(NGINX_PREFIX)):$(strip $(TAG)) $(strip $(SELF_DIR))
 
+build-oss-agent-image: check-for-docker ## Build the custom nginx image with agent
+	docker build --platform linux/$(GOARCH) $(strip $(NGINX_DOCKER_BUILD_OPTIONS)) -f $(SELF_DIR)build/Dockerfile.agent -t nginx-agent $(strip $(SELF_DIR))
+
 .PHONY: build-prod-nginx-plus-image
 build-prod-nginx-plus-image: build-nginx-plus-image ## Build the custom nginx plus image for production
 
