@@ -2,16 +2,26 @@
 package agentfakes
 
 import (
+	"context"
 	"sync"
 
 	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/agent"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 type FakeNginxUpdater struct {
-	UpdateConfigStub        func(int)
+	UpdateConfigStub        func(context.Context, types.NamespacedName, []agent.File) error
 	updateConfigMutex       sync.RWMutex
 	updateConfigArgsForCall []struct {
-		arg1 int
+		arg1 context.Context
+		arg2 types.NamespacedName
+		arg3 []agent.File
+	}
+	updateConfigReturns struct {
+		result1 error
+	}
+	updateConfigReturnsOnCall map[int]struct {
+		result1 error
 	}
 	UpdateUpstreamServersStub        func()
 	updateUpstreamServersMutex       sync.RWMutex
@@ -21,17 +31,30 @@ type FakeNginxUpdater struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeNginxUpdater) UpdateConfig(arg1 int) {
+func (fake *FakeNginxUpdater) UpdateConfig(arg1 context.Context, arg2 types.NamespacedName, arg3 []agent.File) error {
+	var arg3Copy []agent.File
+	if arg3 != nil {
+		arg3Copy = make([]agent.File, len(arg3))
+		copy(arg3Copy, arg3)
+	}
 	fake.updateConfigMutex.Lock()
+	ret, specificReturn := fake.updateConfigReturnsOnCall[len(fake.updateConfigArgsForCall)]
 	fake.updateConfigArgsForCall = append(fake.updateConfigArgsForCall, struct {
-		arg1 int
-	}{arg1})
+		arg1 context.Context
+		arg2 types.NamespacedName
+		arg3 []agent.File
+	}{arg1, arg2, arg3Copy})
 	stub := fake.UpdateConfigStub
-	fake.recordInvocation("UpdateConfig", []interface{}{arg1})
+	fakeReturns := fake.updateConfigReturns
+	fake.recordInvocation("UpdateConfig", []interface{}{arg1, arg2, arg3Copy})
 	fake.updateConfigMutex.Unlock()
 	if stub != nil {
-		fake.UpdateConfigStub(arg1)
+		return stub(arg1, arg2, arg3)
 	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
 }
 
 func (fake *FakeNginxUpdater) UpdateConfigCallCount() int {
@@ -40,17 +63,40 @@ func (fake *FakeNginxUpdater) UpdateConfigCallCount() int {
 	return len(fake.updateConfigArgsForCall)
 }
 
-func (fake *FakeNginxUpdater) UpdateConfigCalls(stub func(int)) {
+func (fake *FakeNginxUpdater) UpdateConfigCalls(stub func(context.Context, types.NamespacedName, []agent.File) error) {
 	fake.updateConfigMutex.Lock()
 	defer fake.updateConfigMutex.Unlock()
 	fake.UpdateConfigStub = stub
 }
 
-func (fake *FakeNginxUpdater) UpdateConfigArgsForCall(i int) int {
+func (fake *FakeNginxUpdater) UpdateConfigArgsForCall(i int) (context.Context, types.NamespacedName, []agent.File) {
 	fake.updateConfigMutex.RLock()
 	defer fake.updateConfigMutex.RUnlock()
 	argsForCall := fake.updateConfigArgsForCall[i]
-	return argsForCall.arg1
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeNginxUpdater) UpdateConfigReturns(result1 error) {
+	fake.updateConfigMutex.Lock()
+	defer fake.updateConfigMutex.Unlock()
+	fake.UpdateConfigStub = nil
+	fake.updateConfigReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeNginxUpdater) UpdateConfigReturnsOnCall(i int, result1 error) {
+	fake.updateConfigMutex.Lock()
+	defer fake.updateConfigMutex.Unlock()
+	fake.UpdateConfigStub = nil
+	if fake.updateConfigReturnsOnCall == nil {
+		fake.updateConfigReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.updateConfigReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeNginxUpdater) UpdateUpstreamServers() {

@@ -15,5 +15,8 @@ data:
     - /var/run/nginx
     features:
     - connection
+    - configuration
+    - certificates
+    - metrics
     log:
       level: debug
