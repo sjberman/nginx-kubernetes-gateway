@@ -15,7 +15,7 @@ readOnlyRootFilesystem: true
 runAsUser:
   type: MustRunAsRange
   uidRangeMin: 101
-  uidRangeMax: 102
+  uidRangeMax: 101
 fsGroup:
   type: MustRunAs
   ranges:
@@ -30,16 +30,8 @@ seLinuxContext:
   type: MustRunAs
 seccompProfiles:
 - runtime/default
-volumes:
-- emptyDir
-- secret
-- configMap
-- projected
 users:
 - {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "nginx-gateway.serviceAccountName" .) }}
-allowedCapabilities:
-- NET_BIND_SERVICE
-- KILL
 requiredDropCapabilities:
 - ALL
 {{- end }}
