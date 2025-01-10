@@ -185,7 +185,12 @@ func (h *eventHandlerImpl) HandleEventBatch(ctx context.Context, logger logr.Log
 		h.setLatestConfiguration(&cfg)
 
 		if h.cfg.plus {
-			h.cfg.nginxUpdater.UpdateUpstreamServers()
+			// TODO(sberman): hardcode this deployment name until we support provisioning data planes
+			deployment := types.NamespacedName{
+				Name:      "tmp-nginx-deployment",
+				Namespace: h.cfg.gatewayPodConfig.Namespace,
+			}
+			err = h.cfg.nginxUpdater.UpdateUpstreamServers(ctx, deployment, cfg)
 		} else {
 			err = h.updateNginxConf(ctx, cfg)
 		}
@@ -314,7 +319,9 @@ func (h *eventHandlerImpl) updateNginxConf(ctx context.Context, conf dataplane.C
 
 	// If using NGINX Plus, update upstream servers using the API.
 	if h.cfg.plus {
-		h.cfg.nginxUpdater.UpdateUpstreamServers()
+		if err := h.cfg.nginxUpdater.UpdateUpstreamServers(ctx, deployment, conf); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/agent/broadcast"
 	agentgrpc "github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/agent/grpc"
 	grpcContext "github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/agent/grpc/context"
 	"github.com/nginxinc/nginx-gateway-fabric/internal/mode/static/nginx/agent/meta"
@@ -72,6 +73,8 @@ func (cs *commandService) CreateConnection(
 
 	instances := resource.GetInstances()
 	if len(instances) != 2 {
+		// TODO(sberman): wait for DataPlaneStatusRequest to send us the instance data.
+		// Somehow utilize the connections map to track the instanceID?
 		return nil, status.Errorf(codes.InvalidArgument, "connection request does not contain agent and nginx instances")
 	}
 
@@ -139,9 +142,19 @@ func (cs *commandService) Subscribe(in pb.CommandService_SubscribeServer) error 
 		case <-ctx.Done():
 			return ctx.Err()
 		case msg := <-listenerCh:
-			if err := in.Send(buildRequest(msg.FileOverviews, conn.InstanceID, msg.ConfigVersion)); err != nil {
+			var req *pb.ManagementPlaneRequest
+			switch msg.Type {
+			case broadcast.ConfigApplyRequest:
+				req = buildRequest(msg.FileOverviews, conn.InstanceID, msg.ConfigVersion)
+			case broadcast.APIRequest:
+				req = buildPlusAPIRequest(msg.NGINXPlusAction, conn.InstanceID)
+			default:
+				panic(fmt.Sprintf("unknown request type %d", msg.Type))
+			}
+
+			if err := in.Send(req); err != nil {
 				cs.logger.Error(err, "error sending request to agent")
-				sendResponse(responseCh, err)
+				responseCh <- err
 
 				return err
 			}
@@ -188,7 +201,7 @@ func (cs *commandService) waitForConnection(
 func (cs *commandService) listenForDataPlaneResponse(
 	ctx context.Context,
 	in pb.CommandService_SubscribeServer,
-	responseCh chan error,
+	responseCh chan<- error,
 ) {
 	for {
 		select {
@@ -204,9 +217,9 @@ func (cs *commandService) listenForDataPlaneResponse(
 			res := dataPlaneResponse.GetCommandResponse()
 			if res.GetStatus() != pb.CommandResponse_COMMAND_STATUS_OK {
 				err := fmt.Errorf("bad response from agent: %s; error: %s", res.GetMessage(), res.GetError())
-				sendResponse(responseCh, err)
+				responseCh <- err
 			} else {
-				sendResponse(responseCh, nil)
+				responseCh <- nil
 			}
 		}
 	}
@@ -233,13 +246,21 @@ func buildRequest(fileOverviews []*pb.File, instanceID, version string) *pb.Mana
 	}
 }
 
-// sendResponse either sends an error or nil back to the broadcaster so it
-// can relay the status of the ConfigApply back to the caller.
-// We do not wait for the value to be read before returning.
-func sendResponse(responseCh chan error, err error) {
-	select {
-	case responseCh <- err:
-	default:
+func buildPlusAPIRequest(action *pb.NGINXPlusAction, instanceID string) *pb.ManagementPlaneRequest {
+	return &pb.ManagementPlaneRequest{
+		MessageMeta: &pb.MessageMeta{
+			MessageId:     meta.GenerateMessageID(),
+			CorrelationId: meta.GenerateMessageID(),
+			Timestamp:     timestamppb.Now(),
+		},
+		Request: &pb.ManagementPlaneRequest_ActionRequest{
+			ActionRequest: &pb.APIActionRequest{
+				InstanceId: instanceID,
+				Action: &pb.APIActionRequest_NginxPlusAction{
+					NginxPlusAction: action,
+				},
+			},
+		},
 	}
 }
 

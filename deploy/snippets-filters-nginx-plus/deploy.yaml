@@ -160,6 +160,7 @@ data:
     - configuration
     - certificates
     - metrics
+    - api-action
     log:
       level: debug
 kind: ConfigMap

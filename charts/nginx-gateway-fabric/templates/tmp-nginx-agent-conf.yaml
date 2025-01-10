@@ -18,5 +18,8 @@ data:
     - configuration
     - certificates
     - metrics
+    {{- if .Values.nginx.plus }}
+    - api-action
+    {{- end }}
     log:
       level: debug
