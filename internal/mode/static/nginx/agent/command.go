@@ -161,6 +161,7 @@ func (cs *commandService) Subscribe(in pb.CommandService_SubscribeServer) error 
 			}
 
 			if err := in.Send(req); err != nil {
+				deployment.RUnlock()
 				cs.logger.Error(err, "error sending request to agent")
 				channels.ResponseCh <- err
 
