@@ -164,9 +164,7 @@ func (h *eventHandlerImpl) HandleEventBatch(ctx context.Context, logger logr.Log
 		h.cfg.graphBuiltHealthChecker.setAsReady()
 	}
 
-	// TODO(sberman): if nginx Deployment is scaled up, we need to trigger an update for it to send
-	// the config to the new pod
-	// If scaled down, we should remove the pod from the ConnectionsTracker
+	// TODO(sberman): if nginx Deployment is scaled down, we should remove the pod from the ConnectionsTracker
 	// If fully deleted, then delete the deployment from the Store
 	var err error
 	var configApplied bool
@@ -326,7 +324,7 @@ func (h *eventHandlerImpl) updateNginxConf(ctx context.Context, conf dataplane.C
 
 	// If using NGINX Plus, update upstream servers using the API.
 	var plusApplied bool
-	if h.cfg.plus {
+	if h.cfg.plus && applied {
 		plusApplied, err = h.cfg.nginxUpdater.UpdateUpstreamServers(ctx, deployment, conf)
 		if err != nil {
 			return false, err
