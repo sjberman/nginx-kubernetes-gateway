@@ -505,6 +505,7 @@ func registerControllers(
 				objectType: &ngfAPI.NginxGateway{},
 				options: []controller.Option{
 					controller.WithNamespacedNameFilter(filter.CreateSingleResourceFilter(controlConfigNSName)),
+					controller.WithK8sPredicate(k8spredicate.GenerationChangedPredicate{}),
 				},
 			})
 		if err := setInitialConfig(

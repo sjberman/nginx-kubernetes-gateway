@@ -11,7 +11,7 @@ import (
 )
 
 type FakeNginxUpdater struct {
-	UpdateConfigStub        func(context.Context, types.NamespacedName, []agent.File) error
+	UpdateConfigStub        func(context.Context, types.NamespacedName, []agent.File) (bool, error)
 	updateConfigMutex       sync.RWMutex
 	updateConfigArgsForCall []struct {
 		arg1 context.Context
@@ -19,12 +19,14 @@ type FakeNginxUpdater struct {
 		arg3 []agent.File
 	}
 	updateConfigReturns struct {
-		result1 error
+		result1 bool
+		result2 error
 	}
 	updateConfigReturnsOnCall map[int]struct {
-		result1 error
+		result1 bool
+		result2 error
 	}
-	UpdateUpstreamServersStub        func(context.Context, types.NamespacedName, dataplane.Configuration) error
+	UpdateUpstreamServersStub        func(context.Context, types.NamespacedName, dataplane.Configuration) (bool, error)
 	updateUpstreamServersMutex       sync.RWMutex
 	updateUpstreamServersArgsForCall []struct {
 		arg1 context.Context
@@ -32,16 +34,18 @@ type FakeNginxUpdater struct {
 		arg3 dataplane.Configuration
 	}
 	updateUpstreamServersReturns struct {
-		result1 error
+		result1 bool
+		result2 error
 	}
 	updateUpstreamServersReturnsOnCall map[int]struct {
-		result1 error
+		result1 bool
+		result2 error
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeNginxUpdater) UpdateConfig(arg1 context.Context, arg2 types.NamespacedName, arg3 []agent.File) error {
+func (fake *FakeNginxUpdater) UpdateConfig(arg1 context.Context, arg2 types.NamespacedName, arg3 []agent.File) (bool, error) {
 	var arg3Copy []agent.File
 	if arg3 != nil {
 		arg3Copy = make([]agent.File, len(arg3))
@@ -62,9 +66,9 @@ func (fake *FakeNginxUpdater) UpdateConfig(arg1 context.Context, arg2 types.Name
 		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeNginxUpdater) UpdateConfigCallCount() int {
@@ -73,7 +77,7 @@ func (fake *FakeNginxUpdater) UpdateConfigCallCount() int {
 	return len(fake.updateConfigArgsForCall)
 }
 
-func (fake *FakeNginxUpdater) UpdateConfigCalls(stub func(context.Context, types.NamespacedName, []agent.File) error) {
+func (fake *FakeNginxUpdater) UpdateConfigCalls(stub func(context.Context, types.NamespacedName, []agent.File) (bool, error)) {
 	fake.updateConfigMutex.Lock()
 	defer fake.updateConfigMutex.Unlock()
 	fake.UpdateConfigStub = stub
@@ -86,30 +90,33 @@ func (fake *FakeNginxUpdater) UpdateConfigArgsForCall(i int) (context.Context, t
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeNginxUpdater) UpdateConfigReturns(result1 error) {
+func (fake *FakeNginxUpdater) UpdateConfigReturns(result1 bool, result2 error) {
 	fake.updateConfigMutex.Lock()
 	defer fake.updateConfigMutex.Unlock()
 	fake.UpdateConfigStub = nil
 	fake.updateConfigReturns = struct {
-		result1 error
-	}{result1}
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeNginxUpdater) UpdateConfigReturnsOnCall(i int, result1 error) {
+func (fake *FakeNginxUpdater) UpdateConfigReturnsOnCall(i int, result1 bool, result2 error) {
 	fake.updateConfigMutex.Lock()
 	defer fake.updateConfigMutex.Unlock()
 	fake.UpdateConfigStub = nil
 	if fake.updateConfigReturnsOnCall == nil {
 		fake.updateConfigReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 bool
+			result2 error
 		})
 	}
 	fake.updateConfigReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeNginxUpdater) UpdateUpstreamServers(arg1 context.Context, arg2 types.NamespacedName, arg3 dataplane.Configuration) error {
+func (fake *FakeNginxUpdater) UpdateUpstreamServers(arg1 context.Context, arg2 types.NamespacedName, arg3 dataplane.Configuration) (bool, error) {
 	fake.updateUpstreamServersMutex.Lock()
 	ret, specificReturn := fake.updateUpstreamServersReturnsOnCall[len(fake.updateUpstreamServersArgsForCall)]
 	fake.updateUpstreamServersArgsForCall = append(fake.updateUpstreamServersArgsForCall, struct {
@@ -125,9 +132,9 @@ func (fake *FakeNginxUpdater) UpdateUpstreamServers(arg1 context.Context, arg2 t
 		return stub(arg1, arg2, arg3)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeNginxUpdater) UpdateUpstreamServersCallCount() int {
@@ -136,7 +143,7 @@ func (fake *FakeNginxUpdater) UpdateUpstreamServersCallCount() int {
 	return len(fake.updateUpstreamServersArgsForCall)
 }
 
-func (fake *FakeNginxUpdater) UpdateUpstreamServersCalls(stub func(context.Context, types.NamespacedName, dataplane.Configuration) error) {
+func (fake *FakeNginxUpdater) UpdateUpstreamServersCalls(stub func(context.Context, types.NamespacedName, dataplane.Configuration) (bool, error)) {
 	fake.updateUpstreamServersMutex.Lock()
 	defer fake.updateUpstreamServersMutex.Unlock()
 	fake.UpdateUpstreamServersStub = stub
@@ -149,27 +156,30 @@ func (fake *FakeNginxUpdater) UpdateUpstreamServersArgsForCall(i int) (context.C
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *FakeNginxUpdater) UpdateUpstreamServersReturns(result1 error) {
+func (fake *FakeNginxUpdater) UpdateUpstreamServersReturns(result1 bool, result2 error) {
 	fake.updateUpstreamServersMutex.Lock()
 	defer fake.updateUpstreamServersMutex.Unlock()
 	fake.UpdateUpstreamServersStub = nil
 	fake.updateUpstreamServersReturns = struct {
-		result1 error
-	}{result1}
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeNginxUpdater) UpdateUpstreamServersReturnsOnCall(i int, result1 error) {
+func (fake *FakeNginxUpdater) UpdateUpstreamServersReturnsOnCall(i int, result1 bool, result2 error) {
 	fake.updateUpstreamServersMutex.Lock()
 	defer fake.updateUpstreamServersMutex.Unlock()
 	fake.UpdateUpstreamServersStub = nil
 	if fake.updateUpstreamServersReturnsOnCall == nil {
 		fake.updateUpstreamServersReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 bool
+			result2 error
 		})
 	}
 	fake.updateUpstreamServersReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeNginxUpdater) Invocations() map[string][][]interface{} {

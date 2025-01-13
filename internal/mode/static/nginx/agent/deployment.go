@@ -19,9 +19,10 @@ import (
 type Deployment struct {
 	broadcaster broadcast.Broadcaster
 
-	configVersion string
-	fileOverviews []*pb.File
-	files         []File
+	configVersion    string
+	nginxPlusActions []*pb.NGINXPlusAction
+	fileOverviews    []*pb.File
+	files            []File
 
 	lock sync.RWMutex
 }
@@ -31,6 +32,17 @@ func newDeployment(ctx context.Context) *Deployment {
 	return &Deployment{
 		broadcaster: broadcast.NewDeploymentBroadcaster(ctx),
 	}
+}
+
+// RLock locks the deployment for reading. Used by the Subscriber to lock the deployment from any file
+// changes while updating agent.
+func (d *Deployment) RLock() {
+	d.lock.RLock()
+}
+
+// RUnlock unlocks the deployment from reading.
+func (d *Deployment) RUnlock() {
+	d.lock.RUnlock()
 }
 
 // GetBroadcaster returns the deployment's broadcaster.
@@ -46,11 +58,20 @@ func (d *Deployment) GetFileOverviews() ([]*pb.File, string) {
 	return d.fileOverviews, d.configVersion
 }
 
-// GetFile gets the requested file for the deployment and returns its contents.
-func (d *Deployment) GetFile(name, hash string) []byte {
+// GetNGINXPlusActions returns the current NGINX Plus API Actions for the deployment.
+func (d *Deployment) GetNGINXPlusActions() []*pb.NGINXPlusAction {
 	d.lock.RLock()
 	defer d.lock.RUnlock()
 
+	return d.nginxPlusActions
+}
+
+// GetFile gets the requested file for the deployment and returns its contents.
+// This function MUST only be called after Deployment.Lock() has been called.
+// This function is called by the agent during a ConfigApplyRequest transaction.
+// Since the Deployment must be locked for the duration of the transaction,
+// the Subscriber Locks and Unlocks the Deployment.
+func (d *Deployment) GetFile(name, hash string) []byte {
 	for _, file := range d.files {
 		if name == file.Meta.GetName() && hash == file.Meta.GetHash() {
 			return file.Contents
@@ -96,6 +117,15 @@ func (d *Deployment) SetFiles(files []File) broadcast.NginxAgentMessage {
 		FileOverviews: fileOverviews,
 		ConfigVersion: d.configVersion,
 	}
+}
+
+// SetNGINXPlusActions updates the deployment's latest NGINX Plus Actions to perform if using NGINX Plus.
+// Used by a Subscriber when it first connects.
+func (d *Deployment) SetNGINXPlusActions(actions []*pb.NGINXPlusAction) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	d.nginxPlusActions = actions
 }
 
 // DeploymentStore holds a map of all Deployments.

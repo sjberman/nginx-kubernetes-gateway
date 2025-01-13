@@ -84,6 +84,7 @@ var _ = Describe("eventHandler", func() {
 		fakeProcessor.ProcessReturns(state.NoChange, &graph.Graph{})
 		fakeGenerator = &configfakes.FakeGenerator{}
 		fakeNginxUpdater = &agentfakes.FakeNginxUpdater{}
+		fakeNginxUpdater.UpdateConfigReturns(true, nil)
 		fakeStatusUpdater = &statusfakes.FakeGroupUpdater{}
 		fakeEventRecorder = record.NewFakeRecorder(1)
 		zapLogLevelSetter = newZapLogLevelSetter(zap.NewAtomicLevel())

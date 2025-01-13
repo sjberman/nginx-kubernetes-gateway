@@ -54,6 +54,8 @@ func (cs *commandService) Register(server *grpc.Server) {
 }
 
 // CreateConnection registers a data plane agent with the control plane.
+// The nginx InstanceID could be empty if the agent hasn't discovered its nginx instance yet.
+// Once discovered, the agent will send an UpdateDataPlaneStatus request with the nginx InstanceID set.
 func (cs *commandService) CreateConnection(
 	ctx context.Context,
 	req *pb.CreateConnectionRequest,
@@ -71,36 +73,22 @@ func (cs *commandService) CreateConnection(
 	podName := resource.GetContainerInfo().GetHostname()
 	cs.logger.Info(fmt.Sprintf("Creating connection for nginx pod: %s", podName))
 
-	instances := resource.GetInstances()
-	if len(instances) != 2 {
-		// TODO(sberman): wait for DataPlaneStatusRequest to send us the instance data.
-		// Somehow utilize the connections map to track the instanceID?
-		return nil, status.Errorf(codes.InvalidArgument, "connection request does not contain agent and nginx instances")
-	}
-
-	var instanceID string
-	for _, instance := range instances {
-		instanceType := instance.GetInstanceMeta().GetInstanceType()
-		if instanceType == pb.InstanceMeta_INSTANCE_TYPE_NGINX ||
-			instanceType == pb.InstanceMeta_INSTANCE_TYPE_NGINX_PLUS {
-			instanceID = instance.GetInstanceMeta().GetInstanceId()
-			break
-		}
-	}
-
-	if instanceID == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "instanceID not set")
-	}
-
 	owner, err := cs.getPodOwner(podName)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "error getting pod owner %s", err.Error())
+		response := &pb.CreateConnectionResponse{
+			Response: &pb.CommandResponse{
+				Status:  pb.CommandResponse_COMMAND_STATUS_ERROR,
+				Message: "error getting pod owner",
+				Error:   err.Error(),
+			},
+		}
+		return response, status.Errorf(codes.Internal, "error getting pod owner %s", err.Error())
 	}
 
 	conn := agentgrpc.Connection{
 		Parent:     owner,
 		PodName:    podName,
-		InstanceID: instanceID,
+		InstanceID: getNginxInstanceID(resource.GetInstances()),
 	}
 	cs.connTracker.Track(gi.IPAddress, conn)
 
@@ -122,26 +110,46 @@ func (cs *commandService) Subscribe(in pb.CommandService_SubscribeServer) error 
 
 	cs.logger.Info(fmt.Sprintf("Received subscribe request from %q", gi.IPAddress))
 
-	// wait for the agent to report itself
+	// wait for the agent to report itself and nginx
 	conn, deployment, err := cs.waitForConnection(ctx, gi)
 	if err != nil {
 		cs.logger.Error(err, "error waiting for connection")
 		return err
 	}
 
+	// apply current config before starting listen loop
+	deployment.RLock()
+	fileOverviews, configVersion := deployment.GetFileOverviews()
+	if err = in.Send(buildRequest(fileOverviews, conn.InstanceID, configVersion)); err != nil {
+		fmt.Printf("ERROR applying initial config: %v\n", err)
+		// TODO(sberman): how do we write this status?
+	}
+
+	for _, action := range deployment.GetNGINXPlusActions() {
+		if err := in.Send(buildPlusAPIRequest(action, conn.InstanceID)); err != nil {
+			fmt.Printf("ERROR applying initial API config: %v\n", err)
+			// TODO(sberman): how do we write this status?
+		}
+	}
+	deployment.RUnlock()
+
+	if err == nil {
+		cs.logger.Info(fmt.Sprintf("Successfully configured nginx for new subscription %q", conn.PodName))
+	}
+
 	// subscribe to the deployment broadcaster to get file updates
 	broadcaster := deployment.GetBroadcaster()
-	listenerCh, responseCh := broadcaster.Subscribe()
-	defer broadcaster.CancelSubscription(listenerCh)
+	channels := broadcaster.Subscribe()
+	defer broadcaster.CancelSubscription(channels.ID)
 
-	go cs.listenForDataPlaneResponse(ctx, in, responseCh)
+	go cs.listenForDataPlaneResponse(ctx, in, channels.ResponseCh)
 
-	cs.logger.Info(fmt.Sprintf("Handling subscription for %s/%s", conn.PodName, gi.IPAddress))
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case msg := <-listenerCh:
+		case msg := <-channels.ListenCh:
+			deployment.RLock()
 			var req *pb.ManagementPlaneRequest
 			switch msg.Type {
 			case broadcast.ConfigApplyRequest:
@@ -154,10 +162,11 @@ func (cs *commandService) Subscribe(in pb.CommandService_SubscribeServer) error 
 
 			if err := in.Send(req); err != nil {
 				cs.logger.Error(err, "error sending request to agent")
-				responseCh <- err
+				channels.ResponseCh <- err
 
 				return err
 			}
+			deployment.RUnlock()
 		}
 	}
 }
@@ -174,7 +183,7 @@ func (cs *commandService) waitForConnection(
 	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
 
-	agentConnectErr := errors.New("timed out waiting for agent CreateConnection call")
+	agentConnectErr := errors.New("timed out waiting for agent to register nginx")
 	deploymentStoreErr := errors.New("timed out waiting for nginx deployment to be added to store")
 
 	var err error
@@ -185,7 +194,7 @@ func (cs *commandService) waitForConnection(
 		case <-timer.C:
 			return nil, nil, err
 		case <-ticker.C:
-			if conn := cs.connTracker.GetConnection(gi.IPAddress); conn.PodName != "" {
+			if conn, ok := cs.connTracker.ConnectionIsReady(gi.IPAddress); ok {
 				// connection has been established, now ensure that the deployment exists in the store
 				if deployment, ok := cs.nginxDeployments.Get(conn.Parent); ok {
 					return &conn, deployment, nil
@@ -319,11 +328,39 @@ func (cs *commandService) UpdateDataPlaneHealth(
 }
 
 // UpdateDataPlaneStatus is called by agent on startup and upon any change in agent metadata,
-// instance metadata, or configurations. Since directly changing the nginx configuration on the instance
-// is not supported, this is a no-op for NGF.
+// instance metadata, or configurations. InstanceID may not be set on an initial CreateConnection,
+// and will instead be set on a call to UpdateDataPlaneStatus once the agent discovers its nginx instance.
 func (cs *commandService) UpdateDataPlaneStatus(
-	_ context.Context,
-	_ *pb.UpdateDataPlaneStatusRequest,
+	ctx context.Context,
+	req *pb.UpdateDataPlaneStatusRequest,
 ) (*pb.UpdateDataPlaneStatusResponse, error) {
+	if req == nil {
+		return nil, errors.New("empty UpdateDataPlaneStatus request")
+	}
+
+	gi, ok := grpcContext.GrpcInfoFromContext(ctx)
+	if !ok {
+		return nil, agentgrpc.ErrStatusInvalidConnection
+	}
+
+	instanceID := getNginxInstanceID(req.GetResource().GetInstances())
+	if instanceID == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "request does not contain nginx instanceID")
+	}
+
+	cs.connTracker.SetInstanceID(gi.IPAddress, instanceID)
+
 	return &pb.UpdateDataPlaneStatusResponse{}, nil
+}
+
+func getNginxInstanceID(instances []*pb.Instance) string {
+	for _, instance := range instances {
+		instanceType := instance.GetInstanceMeta().GetInstanceType()
+		if instanceType == pb.InstanceMeta_INSTANCE_TYPE_NGINX ||
+			instanceType == pb.InstanceMeta_INSTANCE_TYPE_NGINX_PLUS {
+			return instance.GetInstanceMeta().GetInstanceId()
+		}
+	}
+
+	return ""
 }

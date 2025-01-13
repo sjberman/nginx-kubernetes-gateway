@@ -27,12 +27,12 @@ type NginxUpdater interface {
 		ctx context.Context,
 		deploymentNsName types.NamespacedName,
 		files []File,
-	) error
+	) (bool, error)
 	UpdateUpstreamServers(
 		ctx context.Context,
 		deploymentNsName types.NamespacedName,
 		conf dataplane.Configuration,
-	) error
+	) (bool, error)
 }
 
 // NginxUpdaterImpl implements the NginxUpdater interface.
@@ -66,12 +66,13 @@ func NewNginxUpdater(
 }
 
 // UpdateConfig sends the nginx configuration to the agent.
-func (n *NginxUpdaterImpl) UpdateConfig(ctx context.Context, nsName types.NamespacedName, files []File) error {
+// Returns whether configuration was applied or not, and any error that occurred.
+func (n *NginxUpdaterImpl) UpdateConfig(ctx context.Context, nsName types.NamespacedName, files []File) (bool, error) {
 	n.logger.Info("Sending nginx configuration to agent")
 
 	deployment := n.nginxDeployments.GetOrStore(ctx, nsName)
 	if deployment == nil {
-		return fmt.Errorf("failed to register nginx deployment %q", nsName.Name)
+		return false, fmt.Errorf("failed to register nginx deployment %q", nsName.Name)
 	}
 
 	// TODO(sberman): wait to send config until Deployment pods have all connected.
@@ -81,50 +82,61 @@ func (n *NginxUpdaterImpl) UpdateConfig(ctx context.Context, nsName types.Namesp
 
 	msg := deployment.SetFiles(files)
 
-	if err := deployment.GetBroadcaster().Send(msg); err != nil {
-		return fmt.Errorf("could not set nginx files: %w", err)
+	applied, err := deployment.GetBroadcaster().Send(msg)
+	if err != nil {
+		return false, fmt.Errorf("could not set nginx files: %w", err)
 	}
 
-	return nil
+	return applied, nil
 }
 
 // UpdateUpstreamServers sends an APIRequest to the agent to update upstream servers using the NGINX Plus API.
 // Only applicable when using NGINX Plus.
+// Returns whether configuration was applied or not, and any error that occurred.
 func (n *NginxUpdaterImpl) UpdateUpstreamServers(
 	ctx context.Context,
 	nsName types.NamespacedName,
 	conf dataplane.Configuration,
-) error {
+) (bool, error) {
 	if !n.plus {
-		return nil
+		return false, nil
 	}
 
 	n.logger.Info("Updating upstream servers using NGINX Plus API")
 
 	deployment := n.nginxDeployments.GetOrStore(ctx, nsName)
 	if deployment == nil {
-		return fmt.Errorf("failed to register nginx deployment %q", nsName.Name)
+		return false, fmt.Errorf("failed to register nginx deployment %q", nsName.Name)
 	}
 	broadcaster := deployment.GetBroadcaster()
 
 	var updateErr error
+	var applied bool
+	actions := make([]*pb.NGINXPlusAction, 0, len(conf.Upstreams))
 	for _, upstream := range conf.Upstreams {
-		msg := broadcast.NginxAgentMessage{
-			Type: broadcast.APIRequest,
-			NGINXPlusAction: &pb.NGINXPlusAction{
-				Action: &pb.NGINXPlusAction_UpdateHttpUpstreamServers{
-					UpdateHttpUpstreamServers: buildUpstreamServers(upstream),
-				},
+		action := &pb.NGINXPlusAction{
+			Action: &pb.NGINXPlusAction_UpdateHttpUpstreamServers{
+				UpdateHttpUpstreamServers: buildUpstreamServers(upstream),
 			},
 		}
+		actions = append(actions, action)
 
-		if err := broadcaster.Send(msg); err != nil {
+		msg := broadcast.NginxAgentMessage{
+			Type:            broadcast.APIRequest,
+			NGINXPlusAction: action,
+		}
+
+		var err error
+		applied, err = broadcaster.Send(msg)
+		if err != nil {
 			updateErr = errors.Join(updateErr, fmt.Errorf(
 				"couldn't update upstream %q via the API: %w", upstream.Name, err))
 		}
 	}
+	// Store the most recent actions on the deployment so any new subscribers can apply them when first connecting.
+	deployment.SetNGINXPlusActions(actions)
 
-	return updateErr
+	return applied, updateErr
 }
 
 func buildUpstreamServers(upstream dataplane.Upstream) *pb.UpdateHTTPUpstreamServers {

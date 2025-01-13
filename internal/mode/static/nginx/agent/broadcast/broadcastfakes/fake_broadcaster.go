@@ -8,42 +8,42 @@ import (
 )
 
 type FakeBroadcaster struct {
-	CancelSubscriptionStub        func(chan broadcast.NginxAgentMessage)
+	CancelSubscriptionStub        func(string)
 	cancelSubscriptionMutex       sync.RWMutex
 	cancelSubscriptionArgsForCall []struct {
-		arg1 chan broadcast.NginxAgentMessage
+		arg1 string
 	}
-	SendStub        func(broadcast.NginxAgentMessage) error
+	SendStub        func(broadcast.NginxAgentMessage) (bool, error)
 	sendMutex       sync.RWMutex
 	sendArgsForCall []struct {
 		arg1 broadcast.NginxAgentMessage
 	}
 	sendReturns struct {
-		result1 error
+		result1 bool
+		result2 error
 	}
 	sendReturnsOnCall map[int]struct {
-		result1 error
+		result1 bool
+		result2 error
 	}
-	SubscribeStub        func() (chan broadcast.NginxAgentMessage, chan<- error)
+	SubscribeStub        func() broadcast.SubscriberChannels
 	subscribeMutex       sync.RWMutex
 	subscribeArgsForCall []struct {
 	}
 	subscribeReturns struct {
-		result1 chan broadcast.NginxAgentMessage
-		result2 chan<- error
+		result1 broadcast.SubscriberChannels
 	}
 	subscribeReturnsOnCall map[int]struct {
-		result1 chan broadcast.NginxAgentMessage
-		result2 chan<- error
+		result1 broadcast.SubscriberChannels
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeBroadcaster) CancelSubscription(arg1 chan broadcast.NginxAgentMessage) {
+func (fake *FakeBroadcaster) CancelSubscription(arg1 string) {
 	fake.cancelSubscriptionMutex.Lock()
 	fake.cancelSubscriptionArgsForCall = append(fake.cancelSubscriptionArgsForCall, struct {
-		arg1 chan broadcast.NginxAgentMessage
+		arg1 string
 	}{arg1})
 	stub := fake.CancelSubscriptionStub
 	fake.recordInvocation("CancelSubscription", []interface{}{arg1})
@@ -59,20 +59,20 @@ func (fake *FakeBroadcaster) CancelSubscriptionCallCount() int {
 	return len(fake.cancelSubscriptionArgsForCall)
 }
 
-func (fake *FakeBroadcaster) CancelSubscriptionCalls(stub func(chan broadcast.NginxAgentMessage)) {
+func (fake *FakeBroadcaster) CancelSubscriptionCalls(stub func(string)) {
 	fake.cancelSubscriptionMutex.Lock()
 	defer fake.cancelSubscriptionMutex.Unlock()
 	fake.CancelSubscriptionStub = stub
 }
 
-func (fake *FakeBroadcaster) CancelSubscriptionArgsForCall(i int) chan broadcast.NginxAgentMessage {
+func (fake *FakeBroadcaster) CancelSubscriptionArgsForCall(i int) string {
 	fake.cancelSubscriptionMutex.RLock()
 	defer fake.cancelSubscriptionMutex.RUnlock()
 	argsForCall := fake.cancelSubscriptionArgsForCall[i]
 	return argsForCall.arg1
 }
 
-func (fake *FakeBroadcaster) Send(arg1 broadcast.NginxAgentMessage) error {
+func (fake *FakeBroadcaster) Send(arg1 broadcast.NginxAgentMessage) (bool, error) {
 	fake.sendMutex.Lock()
 	ret, specificReturn := fake.sendReturnsOnCall[len(fake.sendArgsForCall)]
 	fake.sendArgsForCall = append(fake.sendArgsForCall, struct {
@@ -86,9 +86,9 @@ func (fake *FakeBroadcaster) Send(arg1 broadcast.NginxAgentMessage) error {
 		return stub(arg1)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeBroadcaster) SendCallCount() int {
@@ -97,7 +97,7 @@ func (fake *FakeBroadcaster) SendCallCount() int {
 	return len(fake.sendArgsForCall)
 }
 
-func (fake *FakeBroadcaster) SendCalls(stub func(broadcast.NginxAgentMessage) error) {
+func (fake *FakeBroadcaster) SendCalls(stub func(broadcast.NginxAgentMessage) (bool, error)) {
 	fake.sendMutex.Lock()
 	defer fake.sendMutex.Unlock()
 	fake.SendStub = stub
@@ -110,30 +110,33 @@ func (fake *FakeBroadcaster) SendArgsForCall(i int) broadcast.NginxAgentMessage 
 	return argsForCall.arg1
 }
 
-func (fake *FakeBroadcaster) SendReturns(result1 error) {
+func (fake *FakeBroadcaster) SendReturns(result1 bool, result2 error) {
 	fake.sendMutex.Lock()
 	defer fake.sendMutex.Unlock()
 	fake.SendStub = nil
 	fake.sendReturns = struct {
-		result1 error
-	}{result1}
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeBroadcaster) SendReturnsOnCall(i int, result1 error) {
+func (fake *FakeBroadcaster) SendReturnsOnCall(i int, result1 bool, result2 error) {
 	fake.sendMutex.Lock()
 	defer fake.sendMutex.Unlock()
 	fake.SendStub = nil
 	if fake.sendReturnsOnCall == nil {
 		fake.sendReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 bool
+			result2 error
 		})
 	}
 	fake.sendReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeBroadcaster) Subscribe() (chan broadcast.NginxAgentMessage, chan<- error) {
+func (fake *FakeBroadcaster) Subscribe() broadcast.SubscriberChannels {
 	fake.subscribeMutex.Lock()
 	ret, specificReturn := fake.subscribeReturnsOnCall[len(fake.subscribeArgsForCall)]
 	fake.subscribeArgsForCall = append(fake.subscribeArgsForCall, struct {
@@ -146,9 +149,9 @@ func (fake *FakeBroadcaster) Subscribe() (chan broadcast.NginxAgentMessage, chan
 		return stub()
 	}
 	if specificReturn {
-		return ret.result1, ret.result2
+		return ret.result1
 	}
-	return fakeReturns.result1, fakeReturns.result2
+	return fakeReturns.result1
 }
 
 func (fake *FakeBroadcaster) SubscribeCallCount() int {
@@ -157,36 +160,33 @@ func (fake *FakeBroadcaster) SubscribeCallCount() int {
 	return len(fake.subscribeArgsForCall)
 }
 
-func (fake *FakeBroadcaster) SubscribeCalls(stub func() (chan broadcast.NginxAgentMessage, chan<- error)) {
+func (fake *FakeBroadcaster) SubscribeCalls(stub func() broadcast.SubscriberChannels) {
 	fake.subscribeMutex.Lock()
 	defer fake.subscribeMutex.Unlock()
 	fake.SubscribeStub = stub
 }
 
-func (fake *FakeBroadcaster) SubscribeReturns(result1 chan broadcast.NginxAgentMessage, result2 chan<- error) {
+func (fake *FakeBroadcaster) SubscribeReturns(result1 broadcast.SubscriberChannels) {
 	fake.subscribeMutex.Lock()
 	defer fake.subscribeMutex.Unlock()
 	fake.SubscribeStub = nil
 	fake.subscribeReturns = struct {
-		result1 chan broadcast.NginxAgentMessage
-		result2 chan<- error
-	}{result1, result2}
+		result1 broadcast.SubscriberChannels
+	}{result1}
 }
 
-func (fake *FakeBroadcaster) SubscribeReturnsOnCall(i int, result1 chan broadcast.NginxAgentMessage, result2 chan<- error) {
+func (fake *FakeBroadcaster) SubscribeReturnsOnCall(i int, result1 broadcast.SubscriberChannels) {
 	fake.subscribeMutex.Lock()
 	defer fake.subscribeMutex.Unlock()
 	fake.SubscribeStub = nil
 	if fake.subscribeReturnsOnCall == nil {
 		fake.subscribeReturnsOnCall = make(map[int]struct {
-			result1 chan broadcast.NginxAgentMessage
-			result2 chan<- error
+			result1 broadcast.SubscriberChannels
 		})
 	}
 	fake.subscribeReturnsOnCall[i] = struct {
-		result1 chan broadcast.NginxAgentMessage
-		result2 chan<- error
-	}{result1, result2}
+		result1 broadcast.SubscriberChannels
+	}{result1}
 }
 
 func (fake *FakeBroadcaster) Invocations() map[string][][]interface{} {

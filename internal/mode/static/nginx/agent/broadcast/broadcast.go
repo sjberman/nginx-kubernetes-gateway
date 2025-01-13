@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	pb "github.com/nginx/agent/v3/api/grpc/mpi/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -14,14 +15,21 @@ import (
 
 // Broadcaster defines an interface for consumers to subscribe to File updates.
 type Broadcaster interface {
-	Subscribe() (chan NginxAgentMessage, chan<- error)
-	Send(NginxAgentMessage) error
-	CancelSubscription(chan NginxAgentMessage)
+	Subscribe() SubscriberChannels
+	Send(NginxAgentMessage) (bool, error)
+	CancelSubscription(string)
 }
 
-type subscriberChannels struct {
-	listenCh   chan NginxAgentMessage
-	responseCh chan error
+type SubscriberChannels struct {
+	ListenCh   <-chan NginxAgentMessage
+	ResponseCh chan<- error
+	ID         string
+}
+
+type storedChannels struct {
+	listenCh   chan<- NginxAgentMessage
+	responseCh <-chan error
+	id         string
 }
 
 // DeploymentBroadcaster sends out a signal when an nginx Deployment has updated
@@ -30,19 +38,19 @@ type subscriberChannels struct {
 // the configuration was successfully applied.
 type DeploymentBroadcaster struct {
 	publishCh chan NginxAgentMessage
-	subCh     chan subscriberChannels
-	unsubCh   chan chan NginxAgentMessage
-	listeners map[chan NginxAgentMessage]chan error
+	subCh     chan storedChannels
+	unsubCh   chan string
+	listeners map[string]storedChannels
 	errorCh   chan error
 }
 
 // NewDeploymentBroadcaster returns a new instance of a DeploymentBroadcaster.
 func NewDeploymentBroadcaster(ctx context.Context) *DeploymentBroadcaster {
 	broadcaster := &DeploymentBroadcaster{
-		listeners: make(map[chan NginxAgentMessage]chan error),
+		listeners: make(map[string]storedChannels),
 		publishCh: make(chan NginxAgentMessage),
-		subCh:     make(chan subscriberChannels),
-		unsubCh:   make(chan chan NginxAgentMessage),
+		subCh:     make(chan storedChannels),
+		unsubCh:   make(chan string),
 		errorCh:   make(chan error),
 	}
 	go broadcaster.run(ctx)
@@ -52,29 +60,38 @@ func NewDeploymentBroadcaster(ctx context.Context) *DeploymentBroadcaster {
 
 // Subscribe allows a listener to subscribe to broadcast messages. It returns the channel
 // to listen on for messages, as well as a channel to respond on.
-func (b *DeploymentBroadcaster) Subscribe() (chan NginxAgentMessage, chan<- error) {
+func (b *DeploymentBroadcaster) Subscribe() SubscriberChannels {
 	listenCh := make(chan NginxAgentMessage)
 	responseCh := make(chan error)
-	sc := subscriberChannels{
+	id := string(uuid.NewUUID())
+
+	subscriberChans := SubscriberChannels{
+		ID:         id,
+		ListenCh:   listenCh,
+		ResponseCh: responseCh,
+	}
+	storedChans := storedChannels{
+		id:         id,
 		listenCh:   listenCh,
 		responseCh: responseCh,
 	}
 
-	b.subCh <- sc
-	return listenCh, responseCh
+	b.subCh <- storedChans
+	return subscriberChans
 }
 
-// Send the message to all listeners. Wait for a response from each listener
-// or until a timeout.
-func (b *DeploymentBroadcaster) Send(message NginxAgentMessage) error {
+// Send the message to all listeners. Wait for all listeners to respond.
+// Returns true if there were listeners that received the message, and returns any
+// responses (nil for success, error for failure).
+func (b *DeploymentBroadcaster) Send(message NginxAgentMessage) (bool, error) {
 	b.publishCh <- message
 
-	return <-b.errorCh
+	return len(b.listeners) > 0, <-b.errorCh
 }
 
 // CancelSubscription removes a Subscriber from the channel list.
-func (b *DeploymentBroadcaster) CancelSubscription(channel chan NginxAgentMessage) {
-	b.unsubCh <- channel
+func (b *DeploymentBroadcaster) CancelSubscription(id string) {
+	b.unsubCh <- id
 }
 
 // run starts the broadcaster loop. It handles the following events:
@@ -83,35 +100,27 @@ func (b *DeploymentBroadcaster) CancelSubscription(channel chan NginxAgentMessag
 // - if receiving a canceled subscription, remove it from the subscriber list.
 // - if receiving a message to publish, send it to all subscribers.
 func (b *DeploymentBroadcaster) run(ctx context.Context) {
-	defer func() {
-		for listener := range b.listeners {
-			if listener != nil {
-				close(listener)
-			}
-		}
-	}()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case channels := <-b.subCh:
-			b.listeners[channels.listenCh] = channels.responseCh
-		case msgCh := <-b.unsubCh:
-			delete(b.listeners, msgCh)
+			b.listeners[channels.id] = channels
+		case id := <-b.unsubCh:
+			delete(b.listeners, id)
 		case msg := <-b.publishCh:
 			var wg sync.WaitGroup
 			wg.Add(len(b.listeners))
 
 			responses := make(chan error, len(b.listeners))
-			for msgCh, responseCh := range b.listeners {
+			for _, channels := range b.listeners {
 				go func() {
 					defer wg.Done()
 
 					// send message and wait for it to be read
-					msgCh <- msg
+					channels.listenCh <- msg
 					// wait for response
-					res := <-responseCh
+					res := <-channels.responseCh
 					// add response to the list of responses
 					responses <- res
 				}()

@@ -46,6 +46,27 @@ func (c *ConnectionsTracker) GetConnection(key string) Connection {
 	return c.connections[key]
 }
 
+// ConnectionIsReady returns if the connection is ready to be used. In other words, agent
+// has registered itself and an nginx instance with the control plane.
+func (c *ConnectionsTracker) ConnectionIsReady(key string) (Connection, bool) {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	conn, ok := c.connections[key]
+	return conn, ok && conn.InstanceID != ""
+}
+
+// SetInstanceID sets the nginx instanceID for a connection.
+func (c *ConnectionsTracker) SetInstanceID(key, id string) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	if conn, ok := c.connections[key]; ok {
+		conn.InstanceID = id
+		c.connections[key] = conn
+	}
+}
+
 // UntrackConnectionsForParent removes all Connections that reference the specified parent.
 func (c *ConnectionsTracker) UntrackConnectionsForParent(parent types.NamespacedName) {
 	c.lock.Lock()
